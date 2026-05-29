@@ -9,7 +9,7 @@ jobs:
 
 build-and-deploy:
 
-```
+
 runs-on: ubuntu-latest
 
 steps:
@@ -89,5 +89,4 @@ steps:
           grafana/grafana
 
         docker ps
-```
 

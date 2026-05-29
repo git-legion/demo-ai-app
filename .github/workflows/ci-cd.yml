@@ -1,4 +1,4 @@
-name: Demo AI Application Pipeline
+name: Enterprise AI Monitoring Pipeline
 
 on:
 push:
@@ -6,9 +6,7 @@ branches:
 - master
 
 jobs:
-
 build-and-deploy:
-
 
 runs-on: ubuntu-latest
 
@@ -27,9 +25,8 @@ steps:
     run: |
       docker build -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} .
 
-      docker tag \
-        ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
-        ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+      docker tag ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
+      ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
   - name: Push Docker Images
     run: |
@@ -37,17 +34,13 @@ steps:
 
       docker push ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
-  - name: Deploy Application and Monitoring Stack
+  - name: Deploy Monitoring Stack
     uses: appleboy/ssh-action@v1.0.3
     with:
       host: ${{ secrets.SERVER_HOST }}
       username: ${{ secrets.SERVER_USERNAME }}
       key: ${{ secrets.SERVER_SSH_KEY }}
       script: |
-
-        mkdir -p ai-monitoring-app
-
-        cd ai-monitoring-app
 
         docker network create monitoring-network || true
 
@@ -77,7 +70,6 @@ steps:
           --network monitoring-network \
           -p 9090:9090 \
           --restart always \
-          -v /home/${{ secrets.SERVER_USERNAME }}/ai-monitoring-app/prometheus.yml:/etc/prometheus/prometheus.yml \
           prom/prometheus
 
         docker run -d \
@@ -85,8 +77,6 @@ steps:
           --network monitoring-network \
           -p 3000:3000 \
           --restart always \
-          -v grafana-storage:/var/lib/grafana \
           grafana/grafana
 
         docker ps
-
