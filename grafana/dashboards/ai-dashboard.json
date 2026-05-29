@@ -1,0 +1,16 @@
+{
+  "panels": [
+    {
+      "targets": [
+        {
+          "expr": "app_requests_total",
+          "refId": "A"
+        }
+      ],
+      "title": "Application Requests",
+      "type": "timeseries"
+    }
+  ],
+  "title": "AI Monitoring Dashboard"
+}
+
