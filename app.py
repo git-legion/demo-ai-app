@@ -2,7 +2,7 @@ import streamlit as st
 from auth import authenticate
 from logger import logger
 
-st.title("Demo AI Application")
+st.title("Development AI Application")
 
 username = st.text_input("Username")
 password = st.text_input("Password", type="password")
