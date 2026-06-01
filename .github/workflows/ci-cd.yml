@@ -52,6 +52,9 @@ jobs:
               --network monitoring-network \
               -p 8501:8501 \
               --restart always \
+              -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
+              -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
+              -e APP_ENV=production \
               ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
             docker run -d \
