@@ -1,12 +1,7 @@
 import streamlit as st
 from auth import authenticate
 from logger import logger
-from openai import OpenAI
-import os
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+import requests
 
 # Session State
 if "logged_in" not in st.session_state:
@@ -59,17 +54,16 @@ else:
 
             logger.info("Generating AI response")
 
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+            response = requests.post(
+                "http://ollama:11434/api/generate",
+                json={
+                    "model": "llama3",
+                    "prompt": prompt,
+                    "stream": False
+                }
             )
 
-            ai_response = response.choices[0].message.content
+            ai_response = response.json()["response"]
 
             st.subheader("AI Response")
 
