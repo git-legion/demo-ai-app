@@ -3,49 +3,39 @@ from auth import authenticate
 from logger import logger
 import requests
 
+#################################################
+# Session State
+#################################################
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+#################################################
+# App Title
+#################################################
+
 st.title("Development AI Application")
 
-username = st.text_input("Username")
-password = st.text_input("Password", type="password")
+#################################################
+# Login Section
+#################################################
 
-if st.button("Login"):
+if not st.session_state.logged_in:
 
-    try:
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
 
         if authenticate(username, password):
+
+            st.session_state.logged_in = True
 
             logger.info("User authenticated successfully")
 
             st.success("Login Successful")
 
-            prompt = st.text_area("Ask AI")
-
-            if st.button("Generate Response"):
-
-                try:
-
-                    response = requests.post(
-                        "http://ollama:11434/api/generate",
-                        json={
-                            "model": "tinyllama",
-                            "prompt": prompt,
-                            "stream": False
-                        }
-                    )
-
-                    result = response.json()
-
-                    logger.info("AI response generated")
-
-                    st.success("AI Response")
-
-                    st.write(result["response"])
-
-                except Exception as ai_error:
-
-                    logger.error(f"AI Error: {ai_error}")
-
-                    st.error(ai_error)
+            st.rerun()
 
         else:
 
@@ -53,8 +43,39 @@ if st.button("Login"):
 
             st.error("Invalid Credentials")
 
-    except Exception as e:
+#################################################
+# AI Chat Section
+#################################################
 
-        logger.exception("Application Error")
+if st.session_state.logged_in:
 
-        st.error("Something went wrong")
+    st.success("Login Successful")
+
+    prompt = st.text_area("Ask AI")
+
+    if st.button("Generate Response"):
+
+        try:
+
+            response = requests.post(
+                "http://ollama:11434/api/generate",
+                json={
+                    "model": "tinyllama",
+                    "prompt": prompt,
+                    "stream": False
+                }
+            )
+
+            result = response.json()
+
+            logger.info("AI response generated")
+
+            st.success("AI Response")
+
+            st.write(result["response"])
+
+        except Exception as e:
+
+            logger.error(f"AI Error: {e}")
+
+            st.error(e)
