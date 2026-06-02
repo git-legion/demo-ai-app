@@ -58,7 +58,7 @@ jobs:
       #################################################
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}'
           format: 'table'
