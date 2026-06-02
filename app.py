@@ -3,74 +3,58 @@ from auth import authenticate
 from logger import logger
 import requests
 
-# Session State
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
 st.title("Development AI Application")
 
-# Login Section
-if not st.session_state.logged_in:
+username = st.text_input("Username")
+password = st.text_input("Password", type="password")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+if st.button("Login"):
 
-    if st.button("Login"):
+    try:
 
-        try:
+        if authenticate(username, password):
 
-            if authenticate(username, password):
+            logger.info("User authenticated successfully")
 
-                logger.info("User authenticated successfully")
+            st.success("Login Successful")
 
-                st.session_state.logged_in = True
+            prompt = st.text_area("Ask AI")
 
-                st.success("Login Successful")
+            if st.button("Generate Response"):
 
-                st.rerun()
+                try:
 
-            else:
+                    response = requests.post(
+                        "http://ollama:11434/api/generate",
+                        json={
+                            "model": "tinyllama",
+                            "prompt": prompt,
+                            "stream": False
+                        }
+                    )
 
-                logger.error("Authentication Failed")
+                    result = response.json()
 
-                st.error("Invalid Credentials")
+                    logger.info("AI response generated")
 
-        except Exception as e:
+                    st.success("AI Response")
 
-            logger.exception("Application Error")
+                    st.write(result["response"])
 
-            st.error(str(e))
+                except Exception as ai_error:
 
-# AI Section
-else:
+                    logger.error(f"AI Error: {ai_error}")
 
-    st.success("Login Successful")
+                    st.error(ai_error)
 
-    prompt = st.text_area("Ask AI")
+        else:
 
-    if st.button("Generate Response"):
+            logger.error("Authentication Failed")
 
-        try:
+            st.error("Invalid Credentials")
 
-            logger.info("Generating AI response")
+    except Exception as e:
 
-            response = requests.post(
-                "http://ollama:11434/api/generate",
-                json={
-                    "model": "llama3",
-                    "prompt": prompt,
-                    "stream": False
-                }
-            )
+        logger.exception("Application Error")
 
-            ai_response = response.json()["response"]
-
-            st.subheader("AI Response")
-
-            st.write(ai_response)
-
-        except Exception as e:
-
-            logger.exception("AI Generation Failed")
-
-            st.error(str(e))
+        st.error("Something went wrong")
