@@ -8,51 +8,75 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
+# Session State
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
 st.title("Development AI Application")
 
-username = st.text_input("Username")
-password = st.text_input("Password", type="password")
+# Login Section
+if not st.session_state.logged_in:
 
-if st.button("Login"):
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
 
-    try:
+    if st.button("Login"):
 
-        if authenticate(username, password):
+        try:
 
-            logger.info("User authenticated successfully")
+            if authenticate(username, password):
 
-            st.success("Login Successful")
+                logger.info("User authenticated successfully")
 
-            prompt = st.text_area("Ask AI")
+                st.session_state.logged_in = True
 
-            if st.button("Generate Response"):
+                st.success("Login Successful")
 
-                logger.info("Generating AI response")
+                st.rerun()
 
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
-                )
+            else:
 
-                ai_response = response.choices[0].message.content
+                logger.error("Authentication Failed")
 
-                st.subheader("AI Response")
+                st.error("Invalid Credentials")
 
-                st.write(ai_response)
+        except Exception as e:
 
-        else:
+            logger.exception("Application Error")
 
-            logger.error("Authentication Failed")
+            st.error(str(e))
 
-            st.error("Invalid Credentials")
+# AI Section
+else:
 
-    except Exception as e:
+    st.success("Login Successful")
 
-        logger.exception("Application Error")
+    prompt = st.text_area("Ask AI")
 
-        st.error(str(e))
+    if st.button("Generate Response"):
+
+        try:
+
+            logger.info("Generating AI response")
+
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            ai_response = response.choices[0].message.content
+
+            st.subheader("AI Response")
+
+            st.write(ai_response)
+
+        except Exception as e:
+
+            logger.exception("AI Generation Failed")
+
+            st.error(str(e))
