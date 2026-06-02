@@ -6,6 +6,7 @@ on:
       - master
 
 jobs:
+
   build-scan-deploy:
 
     runs-on: ubuntu-latest
@@ -24,14 +25,13 @@ jobs:
       #################################################
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       #################################################
-      # Docker Hub Login
+      # Login To Docker Hub
       #################################################
 
       - name: Login to Docker Hub
@@ -46,50 +46,44 @@ jobs:
       #################################################
 
       - name: Build AI Application Image
+
         run: |
 
-          docker build --no-cache \
-            -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} .
-
-          docker tag \
-            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
-            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+          docker build \
+          -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
+          -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest \
+          .
 
       #################################################
       # Build Custom Grafana Image
       #################################################
 
       - name: Build Custom Grafana Image
+
         run: |
 
           docker build \
-            -t ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
-            ./grafana
-
-          docker tag \
-            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
-            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+          -t ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest \
+          ./grafana
 
       #################################################
       # Build Custom Prometheus Image
       #################################################
 
       - name: Build Custom Prometheus Image
+
         run: |
 
           docker build \
-            -t ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
-            ./prometheus
-
-          docker tag \
-            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
-            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+          -t ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest \
+          ./prometheus
 
       #################################################
-      # Trivy Scan - AI App
+      # Trivy Vulnerability Scan
       #################################################
 
       - name: Trivy Scan AI Application
+
         uses: aquasecurity/trivy-action@master
 
         with:
@@ -105,45 +99,43 @@ jobs:
       #################################################
 
       - name: Push AI Application Image
+
         run: |
 
           docker push \
-            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}
+          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}
 
           docker push \
-            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
       #################################################
       # Push Grafana Image
       #################################################
 
       - name: Push Grafana Image
+
         run: |
 
           docker push \
-            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }}
-
-          docker push \
-            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+          ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
 
       #################################################
       # Push Prometheus Image
       #################################################
 
       - name: Push Prometheus Image
+
         run: |
 
           docker push \
-            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }}
-
-          docker push \
-            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+          ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
       #################################################
-      # Deploy Complete Monitoring Stack
+      # Deploy Monitoring Stack
       #################################################
 
       - name: Deploy Monitoring Stack
+
         uses: appleboy/ssh-action@v1.0.3
 
         with:
@@ -160,6 +152,35 @@ jobs:
             docker network create monitoring-network || true
 
             #################################################
+            # Deploy Ollama
+            #################################################
+
+            docker stop ollama || true
+
+            docker rm ollama || true
+
+            docker pull ollama/ollama
+
+            docker run -d \
+              --name ollama \
+              --network monitoring-network \
+              -p 11434:11434 \
+              --restart always \
+              ollama/ollama
+
+            #################################################
+            # Wait For Ollama
+            #################################################
+
+            sleep 25
+
+            #################################################
+            # Pull TinyLlama Model
+            #################################################
+
+            docker exec ollama ollama pull tinyllama
+
+            #################################################
             # Pull Latest Images
             #################################################
 
@@ -170,39 +191,12 @@ jobs:
             docker pull ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
             #################################################
-            # Stop Old Containers
-            #################################################
-
-            docker stop ai-app metrics prometheus grafana ollama streamlit-demo || true
-
-            #################################################
             # Remove Old Containers
             #################################################
 
-            docker rm ai-app metrics prometheus grafana ollama streamlit-demo || true
+            docker stop ai-app metrics prometheus grafana || true
 
-            #################################################
-            # Deploy Ollama
-            #################################################
-
-            docker run -d \
-              --name ollama \
-              --network monitoring-network \
-              -p 11434:11434 \
-              --restart always \
-              ollama/ollama
-
-            #################################################
-            # Wait For Ollama Startup
-            #################################################
-
-            sleep 20
-
-            #################################################
-            # Pull AI Model
-            #################################################
-
-            docker exec ollama ollama pull tinyllama
+            docker rm ai-app metrics prometheus grafana || true
 
             #################################################
             # Deploy AI Application
@@ -219,7 +213,7 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
             #################################################
-            # Deploy Metrics Service
+            # Deploy Metrics Container
             #################################################
 
             docker run -d \
@@ -231,7 +225,7 @@ jobs:
               python metrics.py
 
             #################################################
-            # Deploy Custom Prometheus
+            # Deploy Prometheus
             #################################################
 
             docker run -d \
@@ -242,7 +236,7 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
             #################################################
-            # Deploy Custom Grafana
+            # Deploy Grafana
             #################################################
 
             docker run -d \
