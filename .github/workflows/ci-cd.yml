@@ -1,266 +1,230 @@
 name: Demo AI Application Pipeline
 
 on:
-push:
-branches:
-- master
+  push:
+    branches:
+      - master
 
 jobs:
-build-scan-deploy:
+  build-scan-deploy:
 
-runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
 
-steps:
+    steps:
 
-  #################################################
-  # Checkout Source Code
-  #################################################
+      #################################################
+      # Checkout Source Code
+      #################################################
 
-  - name: Checkout Source Code
-    uses: actions/checkout@v4
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
-  #################################################
-  # SonarQube Scan
-  #################################################
+      #################################################
+      # SonarQube Scan
+      #################################################
 
-  - name: SonarQube Scan
-    uses: SonarSource/sonarqube-scan-action@v6
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
 
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-  #################################################
-  # Docker Hub Login
-  #################################################
+      #################################################
+      # Docker Hub Login
+      #################################################
 
-  - name: Login to Docker Hub
-    uses: docker/login-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
 
-    with:
-      username: ${{ secrets.DOCKER_USERNAME }}
-      password: ${{ secrets.DOCKER_PASSWORD }}
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-  #################################################
-  # Build AI Application Image
-  #################################################
+      #################################################
+      # Build AI Application Image
+      #################################################
 
-  - name: Build AI Application Image
-    run: |
+      - name: Build AI Application Image
+        run: |
 
-      docker build \
-      -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} .
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} .
 
-      docker tag \
-      ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
-      ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+          docker tag \
+            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
+            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
-  #################################################
-  # Build Custom Grafana Image
-  #################################################
+      #################################################
+      # Build Custom Grafana Image
+      #################################################
 
-  - name: Build Custom Grafana Image
-    run: |
+      - name: Build Custom Grafana Image
+        run: |
 
-      docker build \
-      -t ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
-      ./grafana
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
+            ./grafana
 
-      docker tag \
-      ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
-      ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+          docker tag \
+            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }} \
+            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
 
-  #################################################
-  # Build Custom Prometheus Image
-  #################################################
+      #################################################
+      # Build Custom Prometheus Image
+      #################################################
 
-  - name: Build Custom Prometheus Image
-    run: |
+      - name: Build Custom Prometheus Image
+        run: |
 
-      docker build \
-      -t ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
-      ./prometheus
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
+            ./prometheus
 
-      docker tag \
-      ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
-      ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+          docker tag \
+            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }} \
+            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
-  #################################################
-  # Trivy Scan - AI App
-  #################################################
+      #################################################
+      # Trivy Scan - AI App
+      #################################################
 
-  - name: Trivy Scan AI Application
-    uses: aquasecurity/trivy-action@master
+      - name: Trivy Scan AI Application
+        uses: aquasecurity/trivy-action@master
 
-    with:
-      image-ref: '${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}'
-      format: 'table'
-      exit-code: '0'
-      ignore-unfixed: true
-      vuln-type: 'os,library'
-      severity: 'CRITICAL,HIGH'
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
-  #################################################
-  # Trivy Scan - Grafana
-  #################################################
+      #################################################
+      # Trivy Scan - Grafana
+      #################################################
 
-  - name: Trivy Scan Grafana Image
-    uses: aquasecurity/trivy-action@master
+      - name: Trivy Scan Grafana Image
+        uses: aquasecurity/trivy-action@master
 
-    with:
-      image-ref: '${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }}'
-      format: 'table'
-      exit-code: '0'
-      ignore-unfixed: true
-      vuln-type: 'os,library'
-      severity: 'CRITICAL,HIGH'
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
-  #################################################
-  # Trivy Scan - Prometheus
-  #################################################
+      #################################################
+      # Trivy Scan - Prometheus
+      #################################################
 
-  - name: Trivy Scan Prometheus Image
-    uses: aquasecurity/trivy-action@master
+      - name: Trivy Scan Prometheus Image
+        uses: aquasecurity/trivy-action@master
 
-    with:
-      image-ref: '${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }}'
-      format: 'table'
-      exit-code: '0'
-      ignore-unfixed: true
-      vuln-type: 'os,library'
-      severity: 'CRITICAL,HIGH'
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
-  #################################################
-  # Push AI Application Image
-  #################################################
+      #################################################
+      # Push AI Application Image
+      #################################################
 
-  - name: Push AI Application Image
-    run: |
+      - name: Push AI Application Image
+        run: |
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
-  #################################################
-  # Push Grafana Image
-  #################################################
+      #################################################
+      # Push Grafana Image
+      #################################################
 
-  - name: Push Grafana Image
-    run: |
+      - name: Push Grafana Image
+        run: |
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }}
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:${{ github.sha }}
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
 
-  #################################################
-  # Push Prometheus Image
-  #################################################
+      #################################################
+      # Push Prometheus Image
+      #################################################
 
-  - name: Push Prometheus Image
-    run: |
+      - name: Push Prometheus Image
+        run: |
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }}
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:${{ github.sha }}
 
-      docker push \
-      ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
-  #################################################
-  # Deploy Complete Monitoring Stack
-  #################################################
+      #################################################
+      # Deploy Complete Monitoring Stack
+      #################################################
 
-  - name: Deploy Monitoring Stack
-    uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy Monitoring Stack
+        uses: appleboy/ssh-action@v1.0.3
 
-    with:
-      host: ${{ secrets.SERVER_HOST }}
-      username: ${{ secrets.SERVER_USERNAME }}
-      key: ${{ secrets.SERVER_SSH_KEY }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
 
-      script: |
+          script: |
 
-        #################################################
-        # Create Network
-        #################################################
+            docker network create monitoring-network || true
 
-        docker network create monitoring-network || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
-        #################################################
-        # Pull Latest Images
-        #################################################
+            docker pull ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
 
-        docker pull ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
-        docker pull ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+            docker stop ai-app metrics prometheus grafana || true
 
-        docker pull ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+            docker rm ai-app metrics prometheus grafana || true
 
-        #################################################
-        # Stop Old Containers
-        #################################################
+            docker run -d \
+              --name ai-app \
+              --network monitoring-network \
+              -p 8501:8501 \
+              --restart always \
+              -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
+              -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
+              -e APP_ENV=production \
+              ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
-        docker stop ai-app metrics prometheus grafana || true
+            docker run -d \
+              --name metrics \
+              --network monitoring-network \
+              -p 5001:5001 \
+              --restart always \
+              ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest \
+              python metrics.py
 
-        #################################################
-        # Remove Old Containers
-        #################################################
+            docker run -d \
+              --name prometheus \
+              --network monitoring-network \
+              -p 9090:9090 \
+              --restart always \
+              ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
 
-        docker rm ai-app metrics prometheus grafana || true
+            docker run -d \
+              --name grafana \
+              --network monitoring-network \
+              -p 3000:3000 \
+              --restart always \
+              ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
 
-        #################################################
-        # Deploy AI Application
-        #################################################
-
-        docker run -d \
-          --name ai-app \
-          --network monitoring-network \
-          -p 8501:8501 \
-          --restart always \
-          -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
-          -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
-          -e APP_ENV=production \
-          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
-
-        #################################################
-        # Deploy Metrics Service
-        #################################################
-
-        docker run -d \
-          --name metrics \
-          --network monitoring-network \
-          -p 5001:5001 \
-          --restart always \
-          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest \
-          python metrics.py
-
-        #################################################
-        # Deploy Custom Prometheus
-        #################################################
-
-        docker run -d \
-          --name prometheus \
-          --network monitoring-network \
-          -p 9090:9090 \
-          --restart always \
-          ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
-
-        #################################################
-        # Deploy Custom Grafana
-        #################################################
-
-        docker run -d \
-          --name grafana \
-          --network monitoring-network \
-          -p 3000:3000 \
-          --restart always \
-          ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
-
-        #################################################
-        # Verify Running Containers
-        #################################################
-
-        docker ps
+            docker ps
