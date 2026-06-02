@@ -3,4 +3,4 @@ python-dotenv
 flask
 prometheus-client
 requests
-
+openai

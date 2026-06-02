@@ -1,6 +1,12 @@
 import streamlit as st
 from auth import authenticate
 from logger import logger
+from openai import OpenAI
+import os
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 st.title("Development AI Application")
 
@@ -21,9 +27,23 @@ if st.button("Login"):
 
             if st.button("Generate Response"):
 
-                logger.info("AI response generated")
+                logger.info("Generating AI response")
 
-                st.write("AI Response Generated Successfully")
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                )
+
+                ai_response = response.choices[0].message.content
+
+                st.subheader("AI Response")
+
+                st.write(ai_response)
 
         else:
 
@@ -31,9 +51,8 @@ if st.button("Login"):
 
             st.error("Invalid Credentials")
 
-    except Exception:
+    except Exception as e:
 
         logger.exception("Application Error")
 
-        st.error("Something went wrong")
-
+        st.error(str(e))

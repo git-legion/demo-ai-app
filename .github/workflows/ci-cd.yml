@@ -203,6 +203,7 @@ jobs:
               -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
               -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
               -e APP_ENV=production \
+              -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
               ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
 
             docker run -d \
