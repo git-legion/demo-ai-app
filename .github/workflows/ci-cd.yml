@@ -8,7 +8,6 @@ branches:
 jobs:
 build-scan-deploy:
 
-```
 runs-on: ubuntu-latest
 
 steps:
@@ -265,5 +264,3 @@ steps:
         #################################################
 
         docker ps
-```
-
