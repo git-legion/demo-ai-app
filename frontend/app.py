@@ -88,7 +88,7 @@ if st.session_state.logged_in:
                 response = requests.post(
                     "http://ollama:11434/api/chat",
                     json={
-                        "model": "tinyllama",
+                        "model": "mistral",
                         "messages": [
                             {
                                 "role": "user",
