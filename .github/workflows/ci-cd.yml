@@ -1,13 +1,88 @@
-name: Demo AI Application Pipeline
+name: Enterprise AI DevSecOps Pipeline
 
 on:
   push:
     branches:
       - master
 
+#################################################
+# Global Environment Variables
+#################################################
+
+env:
+  AI_IMAGE: ai-monitoring-app
+  METRICS_IMAGE: metrics-app
+  GRAFANA_IMAGE: grafana-custom
+  PROMETHEUS_IMAGE: prometheus-custom
+
 jobs:
 
-  build-scan-deploy:
+#################################################
+# Detect Changed Files
+#################################################
+
+  detect-changes:
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      metrics: ${{ steps.filter.outputs.metrics }}
+      grafana: ${{ steps.filter.outputs.grafana }}
+      prometheus: ${{ steps.filter.outputs.prometheus }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+
+    steps:
+
+      #################################################
+      # Checkout Repository
+      #################################################
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      #################################################
+      # Detect Changed Files
+      #################################################
+
+      - name: Detect Changed Files
+        id: filter
+        uses: dorny/paths-filter@v3
+
+        with:
+          filters: |
+
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/**'
+
+            metrics:
+              - 'metrics/**'
+              - '.github/workflows/**'
+
+            grafana:
+              - 'grafana/**'
+              - '.github/workflows/**'
+
+            prometheus:
+              - 'prometheus/**'
+              - '.github/workflows/**'
+
+            workflow:
+              - '.github/workflows/**'
+
+#################################################
+# Build And Deploy Frontend AI Application
+#################################################
+
+  deploy-frontend:
+
+    name: Build And Deploy AI Frontend
+
+    needs: detect-changes
+
+    if: |
+      needs.detect-changes.outputs.frontend == 'true'
 
     runs-on: ubuntu-latest
 
@@ -26,15 +101,16 @@ jobs:
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
+
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       #################################################
-      # Login To Docker Hub
+      # Docker Login
       #################################################
 
-      - name: Login to Docker Hub
+      - name: Login To Docker Hub
         uses: docker/login-action@v3
 
         with:
@@ -42,52 +118,27 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       #################################################
-      # Build AI Application Image
+      # Build Frontend Image
       #################################################
 
-      - name: Build AI Application Image
+      - name: Build Frontend Image
 
         run: |
 
           docker build \
-          -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }} \
-          -t ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest \
-          .
+            -t ${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest \
+            ./frontend
 
       #################################################
-      # Build Custom Grafana Image
+      # Trivy Security Scan
       #################################################
 
-      - name: Build Custom Grafana Image
-
-        run: |
-
-          docker build \
-          -t ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest \
-          ./grafana
-
-      #################################################
-      # Build Custom Prometheus Image
-      #################################################
-
-      - name: Build Custom Prometheus Image
-
-        run: |
-
-          docker build \
-          -t ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest \
-          ./prometheus
-
-      #################################################
-      # Trivy Vulnerability Scan
-      #################################################
-
-      - name: Trivy Scan AI Application
+      - name: Trivy Security Scan
 
         uses: aquasecurity/trivy-action@master
 
         with:
-          image-ref: '${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}'
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest'
           format: 'table'
           exit-code: '0'
           ignore-unfixed: true
@@ -95,46 +146,21 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       #################################################
-      # Push AI Application Image
+      # Push Frontend Image
       #################################################
 
-      - name: Push AI Application Image
+      - name: Push Frontend Image
 
         run: |
 
           docker push \
-          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:${{ github.sha }}
-
-          docker push \
-          ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest
 
       #################################################
-      # Push Grafana Image
+      # Deploy Frontend Container
       #################################################
 
-      - name: Push Grafana Image
-
-        run: |
-
-          docker push \
-          ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
-
-      #################################################
-      # Push Prometheus Image
-      #################################################
-
-      - name: Push Prometheus Image
-
-        run: |
-
-          docker push \
-          ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
-
-      #################################################
-      # Deploy Monitoring Stack
-      #################################################
-
-      - name: Deploy Monitoring Stack
+      - name: Deploy Frontend Container
 
         uses: appleboy/ssh-action@v1.0.3
 
@@ -146,60 +172,28 @@ jobs:
           script: |
 
             #################################################
-            # Create Docker Network
+            # Create Network
             #################################################
 
             docker network create monitoring-network || true
 
             #################################################
-            # Deploy Ollama
+            # Pull Latest Frontend Image
             #################################################
 
-            docker stop ollama || true
-
-            docker rm ollama || true
-
-            docker pull ollama/ollama
-
-            docker run -d \
-              --name ollama \
-              --network monitoring-network \
-              -p 11434:11434 \
-              --restart always \
-              ollama/ollama
+            docker pull \
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest
 
             #################################################
-            # Wait For Ollama
+            # Stop Existing Frontend Container
             #################################################
 
-            sleep 25
+            docker stop ai-app || true
+
+            docker rm ai-app || true
 
             #################################################
-            # Pull TinyLlama Model
-            #################################################
-
-            docker exec ollama ollama pull tinyllama
-
-            #################################################
-            # Pull Latest Images
-            #################################################
-
-            docker pull ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
-
-            docker pull ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
-
-            docker pull ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
-
-            #################################################
-            # Remove Old Containers
-            #################################################
-
-            docker stop ai-app metrics prometheus grafana || true
-
-            docker rm ai-app metrics prometheus grafana || true
-
-            #################################################
-            # Deploy AI Application
+            # Deploy Frontend Container
             #################################################
 
             docker run -d \
@@ -209,45 +203,331 @@ jobs:
               --restart always \
               -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
               -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
-              -e APP_ENV=production \
-              ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest
 
             #################################################
-            # Deploy Metrics Container
+            # Verify Deployment
             #################################################
+
+            docker ps
+
+#################################################
+# Build And Deploy Metrics Service
+#################################################
+
+  deploy-metrics:
+
+    name: Build And Deploy Metrics Service
+
+    needs: detect-changes
+
+    if: |
+      needs.detect-changes.outputs.metrics == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Login To Docker Hub
+        uses: docker/login-action@v3
+
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      #################################################
+      # Build Metrics Image
+      #################################################
+
+      - name: Build Metrics Image
+
+        run: |
+
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/${{ env.METRICS_IMAGE }}:latest \
+            ./metrics
+
+      #################################################
+      # Push Metrics Image
+      #################################################
+
+      - name: Push Metrics Image
+
+        run: |
+
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.METRICS_IMAGE }}:latest
+
+      #################################################
+      # Deploy Metrics Container
+      #################################################
+
+      - name: Deploy Metrics Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker pull \
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.METRICS_IMAGE }}:latest
+
+            docker stop metrics || true
+
+            docker rm metrics || true
 
             docker run -d \
               --name metrics \
               --network monitoring-network \
               -p 5001:5001 \
               --restart always \
-              ${{ secrets.DOCKER_USERNAME }}/ai-monitoring-app:latest \
-              python metrics.py
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.METRICS_IMAGE }}:latest
 
-            #################################################
-            # Deploy Prometheus
-            #################################################
+            docker ps
 
-            docker run -d \
-              --name prometheus \
-              --network monitoring-network \
-              -p 9090:9090 \
-              --restart always \
-              ${{ secrets.DOCKER_USERNAME }}/prometheus-custom:latest
+#################################################
+# Build And Deploy Grafana
+#################################################
 
-            #################################################
-            # Deploy Grafana
-            #################################################
+  deploy-grafana:
+
+    name: Build And Deploy Grafana
+
+    needs: detect-changes
+
+    if: |
+      needs.detect-changes.outputs.grafana == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Login To Docker Hub
+        uses: docker/login-action@v3
+
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      #################################################
+      # Build Grafana Image
+      #################################################
+
+      - name: Build Grafana Image
+
+        run: |
+
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/${{ env.GRAFANA_IMAGE }}:latest \
+            ./grafana
+
+      #################################################
+      # Push Grafana Image
+      #################################################
+
+      - name: Push Grafana Image
+
+        run: |
+
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.GRAFANA_IMAGE }}:latest
+
+      #################################################
+      # Deploy Grafana Container
+      #################################################
+
+      - name: Deploy Grafana Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker pull \
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.GRAFANA_IMAGE }}:latest
+
+            docker stop grafana || true
+
+            docker rm grafana || true
 
             docker run -d \
               --name grafana \
               --network monitoring-network \
               -p 3000:3000 \
               --restart always \
-              ${{ secrets.DOCKER_USERNAME }}/grafana-custom:latest
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.GRAFANA_IMAGE }}:latest
+
+            docker ps
+
+#################################################
+# Build And Deploy Prometheus
+#################################################
+
+  deploy-prometheus:
+
+    name: Build And Deploy Prometheus
+
+    needs: detect-changes
+
+    if: |
+      needs.detect-changes.outputs.prometheus == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Login To Docker Hub
+        uses: docker/login-action@v3
+
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      #################################################
+      # Build Prometheus Image
+      #################################################
+
+      - name: Build Prometheus Image
+
+        run: |
+
+          docker build \
+            -t ${{ secrets.DOCKER_USERNAME }}/${{ env.PROMETHEUS_IMAGE }}:latest \
+            ./prometheus
+
+      #################################################
+      # Push Prometheus Image
+      #################################################
+
+      - name: Push Prometheus Image
+
+        run: |
+
+          docker push \
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.PROMETHEUS_IMAGE }}:latest
+
+      #################################################
+      # Deploy Prometheus Container
+      #################################################
+
+      - name: Deploy Prometheus Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker pull \
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.PROMETHEUS_IMAGE }}:latest
+
+            docker stop prometheus || true
+
+            docker rm prometheus || true
+
+            docker run -d \
+              --name prometheus \
+              --network monitoring-network \
+              -p 9090:9090 \
+              --restart always \
+              ${{ secrets.DOCKER_USERNAME }}/${{ env.PROMETHEUS_IMAGE }}:latest
+
+            docker ps
+
+#################################################
+# Deploy Ollama AI Runtime
+#################################################
+
+  deploy-ollama:
+
+    name: Deploy Ollama AI Runtime
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy-frontend
+
+    if: |
+      always()
+
+    steps:
+
+      #################################################
+      # Deploy Ollama Container
+      #################################################
+
+      - name: Deploy Ollama Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
 
             #################################################
-            # Verify Running Containers
+            # Stop Existing Ollama
+            #################################################
+
+            docker stop ollama || true
+
+            docker rm ollama || true
+
+            #################################################
+            # Deploy Ollama
+            #################################################
+
+            docker run -d \
+              --name ollama \
+              --network monitoring-network \
+              -p 11434:11434 \
+              --restart always \
+              ollama/ollama
+
+            #################################################
+            # Wait For Startup
+            #################################################
+
+            sleep 30
+
+            #################################################
+            # Pull AI Model
+            #################################################
+
+            docker exec ollama ollama pull mistral
+
+            #################################################
+            # Verify Ollama
             #################################################
 
             docker ps

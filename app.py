@@ -4,15 +4,21 @@ from logger import logger
 import requests
 
 #################################################
-# Session State
+# Session State Initialization
 #################################################
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 #################################################
-# App Title
+# Page Title
 #################################################
+
+st.set_page_config(
+    page_title="Development AI Application",
+    page_icon="🤖",
+    layout="centered"
+)
 
 st.title("Development AI Application")
 
@@ -27,21 +33,29 @@ if not st.session_state.logged_in:
 
     if st.button("Login"):
 
-        if authenticate(username, password):
+        try:
 
-            st.session_state.logged_in = True
+            if authenticate(username, password):
 
-            logger.info("User authenticated successfully")
+                st.session_state.logged_in = True
 
-            st.success("Login Successful")
+                logger.info("User authenticated successfully")
 
-            st.rerun()
+                st.success("Login Successful")
 
-        else:
+                st.rerun()
 
-            logger.error("Authentication Failed")
+            else:
 
-            st.error("Invalid Credentials")
+                logger.error("Authentication Failed")
+
+                st.error("Invalid Credentials")
+
+        except Exception as e:
+
+            logger.exception("Login Error")
+
+            st.error(f"Error: {e}")
 
 #################################################
 # AI Chat Section
@@ -57,25 +71,61 @@ if st.session_state.logged_in:
 
         try:
 
-            response = requests.post(
-                "http://ollama:11434/api/generate",
-                json={
-                    "model": "tinyllama",
-                    "prompt": prompt,
-                    "stream": False
-                }
-            )
+            #################################################
+            # Validate Prompt
+            #################################################
 
-            result = response.json()
+            if prompt.strip() == "":
 
-            logger.info("AI response generated")
+                st.warning("Please enter a question")
 
-            st.success("AI Response")
+            else:
 
-            st.write(result["response"])
+                #################################################
+                # Send Request To Ollama
+                #################################################
+
+                response = requests.post(
+                    "http://ollama:11434/api/chat",
+                    json={
+                        "model": "tinyllama",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        "stream": False
+                    },
+                    timeout=120
+                )
+
+                #################################################
+                # Convert Response To JSON
+                #################################################
+
+                result = response.json()
+
+                logger.info("AI response generated successfully")
+
+                #################################################
+                # Display AI Response
+                #################################################
+
+                st.success("AI Response")
+
+                if "message" in result:
+
+                    st.write(result["message"]["content"])
+
+                else:
+
+                    st.error("Unexpected response from AI model")
+
+                    st.write(result)
 
         except Exception as e:
 
-            logger.error(f"AI Error: {e}")
+            logger.exception("AI Response Error")
 
-            st.error(e)
+            st.error(f"AI Error: {e}")
