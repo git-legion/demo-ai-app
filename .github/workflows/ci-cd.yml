@@ -524,7 +524,7 @@ jobs:
             # Pull AI Model
             #################################################
 
-            docker exec ollama ollama pull tinyllama
+            docker exec ollama ollama pull phi
 
             #################################################
             # Verify Ollama
