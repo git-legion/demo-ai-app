@@ -188,9 +188,9 @@ jobs:
             # Stop Existing Frontend Container
             #################################################
 
-            docker stop ai-app || true
+            docker stop llamaops-ai-web || true
 
-            docker rm ai-app || true
+            docker rm llamaops-ai-web || true
 
             #################################################
             # Deploy Frontend Container
