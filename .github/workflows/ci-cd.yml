@@ -10,10 +10,10 @@ on:
 #################################################
 
 env:
-  AI_IMAGE: ai-monitoring-app
-  METRICS_IMAGE: metrics-app
-  GRAFANA_IMAGE: grafana-custom
-  PROMETHEUS_IMAGE: prometheus-custom
+  AI_IMAGE: llamaops-ai-web
+  METRICS_IMAGE: llamaops-ai-metrics
+  GRAFANA_IMAGE: llamaops-ai-grafana-monitoring
+  PROMETHEUS_IMAGE: llamaops-ai-prometheus-server
 
 jobs:
 
@@ -197,7 +197,7 @@ jobs:
             #################################################
 
             docker run -d \
-              --name ai-app \
+              --name llamaops-ai-web \
               --network monitoring-network \
               -p 8501:8501 \
               --restart always \
