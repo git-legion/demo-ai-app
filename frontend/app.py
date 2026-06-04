@@ -15,7 +15,7 @@ if "logged_in" not in st.session_state:
 #################################################
 
 st.set_page_config(
-    page_title="Development AI Application",
+    page_title="LlamaOps AI",
     page_icon="🤖",
     layout="centered"
 )
