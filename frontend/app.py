@@ -20,7 +20,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("Development AI Application")
+st.title("LlamaOps AI")
 
 #################################################
 # Login Section
