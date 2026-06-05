@@ -11,7 +11,7 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 #################################################
-# Page Title
+# Page Configuration
 #################################################
 
 st.set_page_config(
@@ -19,6 +19,28 @@ st.set_page_config(
     page_icon="🤖",
     layout="centered"
 )
+
+#################################################
+# Custom Styling
+#################################################
+
+st.markdown("""
+<style>
+
+.block-container {
+    padding-top: 2rem;
+}
+
+textarea {
+    font-size: 16px !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+#################################################
+# Title
+#################################################
 
 st.title("LlamaOps AI")
 
@@ -41,8 +63,6 @@ if not st.session_state.logged_in:
 
                 logger.info("User authenticated successfully")
 
-                st.success("Login Successful")
-
                 st.rerun()
 
             else:
@@ -63,9 +83,10 @@ if not st.session_state.logged_in:
 
 if st.session_state.logged_in:
 
-    st.success("Login Successful")
-
-    prompt = st.text_area("Ask AI")
+    prompt = st.text_area(
+        "Ask AI",
+        placeholder="Ask anything..."
+    )
 
     if st.button("Generate Response"):
 
@@ -82,47 +103,51 @@ if st.session_state.logged_in:
             else:
 
                 #################################################
-                # Send Request To Ollama
+                # AI Loading Spinner
                 #################################################
 
-                response = requests.post(
-                    "http://ollama:11434/api/chat",
-                    json={
-                        "model": "phi",
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        "stream": False
-                    },
-                    timeout=120
-                )
+                with st.spinner("Generating response..."):
 
-                #################################################
-                # Convert Response To JSON
-                #################################################
+                    #################################################
+                    # Send Request To Ollama
+                    #################################################
 
-                result = response.json()
+                    response = requests.post(
+                        "http://ollama:11434/api/chat",
+                        json={
+                            "model": "phi",
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            "stream": False
+                        },
+                        timeout=120
+                    )
 
-                logger.info("AI response generated successfully")
+                    #################################################
+                    # Convert Response To JSON
+                    #################################################
 
-                #################################################
-                # Display AI Response
-                #################################################
+                    result = response.json()
 
-                st.success("AI Response")
+                    logger.info("AI response generated successfully")
 
-                if "message" in result:
+                    #################################################
+                    # Display AI Response
+                    #################################################
 
-                    st.write(result["message"]["content"])
+                    if "message" in result:
 
-                else:
+                        st.markdown(result["message"]["content"])
 
-                    st.error("Unexpected response from AI model")
+                    else:
 
-                    st.write(result)
+                        st.error("Unexpected response from AI model")
+
+                        st.json(result)
 
         except Exception as e:
 
