@@ -5,6 +5,13 @@ on:
     branches:
       - master
 
+  workflow_dispatch:
+    inputs:
+      deploy_ollama:
+        description: "Deploy Ollama Runtime"
+        required: true
+        default: "false"
+
 #################################################
 # Global Environment Variables
 #################################################
@@ -473,8 +480,7 @@ jobs:
     needs:
       - deploy-frontend
 
-    if: |
-      always()
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_ollama == 'true'
 
     steps:
 
