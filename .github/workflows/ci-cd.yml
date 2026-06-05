@@ -1,4 +1,4 @@
-name: Enterprise AI DevSecOps Pipeline
+name: llamaops-ai Pipeline
 
 on:
   push:
