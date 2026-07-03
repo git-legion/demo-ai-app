@@ -17,47 +17,49 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
 #################################################
-# OTel Initialisation (runs once at module load)
+# OTel Initialisation — cached so Streamlit only
+# runs this once across all script reruns
 #################################################
 
-_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-_SERVICE_NAME  = os.getenv("OTEL_SERVICE_NAME", "llamaops-ai")
+@st.cache_resource
+def _init_otel():
+    endpoint     = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    service_name = os.getenv("OTEL_SERVICE_NAME", "llamaops-ai")
+    resource     = Resource.create({"service.name": service_name})
 
-_resource = Resource.create({"service.name": _SERVICE_NAME})
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    )
+    trace.set_tracer_provider(tracer_provider)
 
-_tracer_provider = TracerProvider(resource=_resource)
-_tracer_provider.add_span_processor(
-    BatchSpanProcessor(OTLPSpanExporter(endpoint=_OTLP_ENDPOINT, insecure=True))
-)
-trace.set_tracer_provider(_tracer_provider)
+    metric_reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=endpoint, insecure=True),
+        export_interval_millis=15_000,
+    )
+    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    metrics.set_meter_provider(meter_provider)
 
-_metric_reader = PeriodicExportingMetricReader(
-    OTLPMetricExporter(endpoint=_OTLP_ENDPOINT, insecure=True),
-    export_interval_millis=15_000,
-)
-_meter_provider = MeterProvider(resource=_resource, metric_readers=[_metric_reader])
-metrics.set_meter_provider(_meter_provider)
+    RequestsInstrumentor().instrument()
+    configure_logging(endpoint)
 
-RequestsInstrumentor().instrument()
+    _tracer = trace.get_tracer(service_name)
+    _meter  = metrics.get_meter(service_name)
 
-tracer = trace.get_tracer(_SERVICE_NAME)
-meter  = metrics.get_meter(_SERVICE_NAME)
+    _counter   = _meter.create_counter(
+        "ai.requests.total",
+        description="Total number of AI chat requests",
+    )
+    _histogram = _meter.create_histogram(
+        "ai.response.duration",
+        unit="s",
+        description="Duration of AI model response in seconds",
+    )
 
-ai_request_counter = meter.create_counter(
-    "ai.requests.total",
-    description="Total number of AI chat requests",
-)
-ai_response_duration = meter.create_histogram(
-    "ai.response.duration",
-    unit="s",
-    description="Duration of AI model response in seconds",
-)
+    return _tracer, _counter, _histogram
 
-#################################################
-# Logging (OTel-correlated)
-#################################################
 
-configure_logging(_OTLP_ENDPOINT)
+tracer, ai_request_counter, ai_response_duration = _init_otel()
 
 #################################################
 # Session State Initialisation
@@ -144,7 +146,7 @@ if st.session_state.logged_in:
 
                 with st.spinner("Generating response..."):
 
-                    start = time.time()
+                    start  = time.time()
                     status = "success"
 
                     try:
