@@ -3,28 +3,33 @@ version: '3.9'
 services:
 
   ai-app:
-    build: .
+    build: ./frontend
     container_name: ai-app
     ports:
       - "8501:8501"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=llamaops-ai
+    depends_on:
+      - otel-collector
 
   metrics:
-    build: .
+    build: ./metrics
     container_name: metrics
     command: python metrics.py
     ports:
       - "5001:5001"
 
   prometheus:
-    image: prom/prometheus
+    build: ./prometheus
     container_name: prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
 
   grafana:
-    image: grafana/grafana
+    build: ./grafana
     container_name: grafana
     ports:
       - "3000:3000"
@@ -32,4 +37,44 @@ services:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - tempo
 
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    command: ["-config.file=/etc/loki.yml"]
+    volumes:
+      - ./loki.yml:/etc/loki.yml
+      - loki-data:/var/loki
+    ports:
+      - "3100:3100"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+
+volumes:
+  tempo-data:
+  loki-data:

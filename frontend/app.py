@@ -1,10 +1,66 @@
+import os
+import time
 import streamlit as st
-from auth import authenticate
-from logger import logger
 import requests
 
+from auth import authenticate
+from logger import logger, configure_logging
+
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
 #################################################
-# Session State Initialization
+# OTel Initialisation (runs once at module load)
+#################################################
+
+_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+_SERVICE_NAME  = os.getenv("OTEL_SERVICE_NAME", "llamaops-ai")
+
+_resource = Resource.create({"service.name": _SERVICE_NAME})
+
+_tracer_provider = TracerProvider(resource=_resource)
+_tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(endpoint=_OTLP_ENDPOINT, insecure=True))
+)
+trace.set_tracer_provider(_tracer_provider)
+
+_metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=_OTLP_ENDPOINT, insecure=True),
+    export_interval_millis=15_000,
+)
+_meter_provider = MeterProvider(resource=_resource, metric_readers=[_metric_reader])
+metrics.set_meter_provider(_meter_provider)
+
+RequestsInstrumentor().instrument()
+
+tracer = trace.get_tracer(_SERVICE_NAME)
+meter  = metrics.get_meter(_SERVICE_NAME)
+
+ai_request_counter = meter.create_counter(
+    "ai.requests.total",
+    description="Total number of AI chat requests",
+)
+ai_response_duration = meter.create_histogram(
+    "ai.response.duration",
+    unit="s",
+    description="Duration of AI model response in seconds",
+)
+
+#################################################
+# Logging (OTel-correlated)
+#################################################
+
+configure_logging(_OTLP_ENDPOINT)
+
+#################################################
+# Session State Initialisation
 #################################################
 
 if "logged_in" not in st.session_state:
@@ -26,15 +82,8 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-
-.block-container {
-    padding-top: 2rem;
-}
-
-textarea {
-    font-size: 16px !important;
-}
-
+.block-container { padding-top: 2rem; }
+textarea { font-size: 16px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,27 +104,23 @@ if not st.session_state.logged_in:
 
     if st.button("Login"):
 
-        try:
+        with tracer.start_as_current_span("auth.login") as span:
+            span.set_attribute("user.name", username)
+            try:
+                if authenticate(username, password):
+                    st.session_state.logged_in = True
+                    span.set_attribute("auth.success", True)
+                    logger.info("User authenticated successfully")
+                    st.rerun()
+                else:
+                    span.set_attribute("auth.success", False)
+                    logger.error("Authentication failed for user: %s", username)
+                    st.error("Invalid Credentials")
 
-            if authenticate(username, password):
-
-                st.session_state.logged_in = True
-
-                logger.info("User authenticated successfully")
-
-                st.rerun()
-
-            else:
-
-                logger.error("Authentication Failed")
-
-                st.error("Invalid Credentials")
-
-        except Exception as e:
-
-            logger.exception("Login Error")
-
-            st.error(f"Error: {e}")
+            except Exception as e:
+                span.record_exception(e)
+                logger.exception("Login error")
+                st.error(f"Error: {e}")
 
 #################################################
 # AI Chat Section
@@ -83,74 +128,58 @@ if not st.session_state.logged_in:
 
 if st.session_state.logged_in:
 
-    prompt = st.text_area(
-        "Ask AI",
-        placeholder="Ask anything..."
-    )
+    prompt = st.text_area("Ask AI", placeholder="Ask anything...")
 
     if st.button("Generate Response"):
 
-        try:
+        if prompt.strip() == "":
+            st.warning("Please enter a question")
 
-            #################################################
-            # Validate Prompt
-            #################################################
+        else:
 
-            if prompt.strip() == "":
+            with tracer.start_as_current_span("ai.chat.request") as span:
 
-                st.warning("Please enter a question")
-
-            else:
-
-                #################################################
-                # AI Loading Spinner
-                #################################################
+                span.set_attribute("ai.model", "phi")
+                span.set_attribute("ai.prompt.length", len(prompt))
 
                 with st.spinner("Generating response..."):
 
-                    #################################################
-                    # Send Request To Ollama
-                    #################################################
+                    start = time.time()
+                    status = "success"
 
-                    response = requests.post(
-                        "http://ollama:11434/api/chat",
-                        json={
-                            "model": "phi",
-                            "messages": [
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            "stream": False
-                        },
-                        timeout=120
-                    )
+                    try:
+                        response = requests.post(
+                            "http://ollama:11434/api/chat",
+                            json={
+                                "model": "phi",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "stream": False,
+                            },
+                            timeout=120,
+                        )
 
-                    #################################################
-                    # Convert Response To JSON
-                    #################################################
+                        result = response.json()
 
-                    result = response.json()
+                        if "message" in result:
+                            reply = result["message"]["content"]
+                            span.set_attribute("ai.response.length", len(reply))
+                            logger.info("AI response generated successfully")
+                            st.markdown(reply)
+                        else:
+                            status = "unexpected_response"
+                            span.set_attribute("ai.error", "unexpected_response_format")
+                            st.error("Unexpected response from AI model")
+                            st.json(result)
 
-                    logger.info("AI response generated successfully")
+                    except Exception as e:
+                        status = "error"
+                        span.record_exception(e)
+                        span.set_status(trace.StatusCode.ERROR, str(e))
+                        logger.exception("AI response error")
+                        st.error(f"AI Error: {e}")
 
-                    #################################################
-                    # Display AI Response
-                    #################################################
-
-                    if "message" in result:
-
-                        st.markdown(result["message"]["content"])
-
-                    else:
-
-                        st.error("Unexpected response from AI model")
-
-                        st.json(result)
-
-        except Exception as e:
-
-            logger.exception("AI Response Error")
-
-            st.error(f"AI Error: {e}")
+                    finally:
+                        elapsed = time.time() - start
+                        ai_request_counter.add(1, {"model": "phi", "status": status})
+                        ai_response_duration.record(elapsed, {"model": "phi", "status": status})
+                        span.set_attribute("ai.response.duration_s", elapsed)

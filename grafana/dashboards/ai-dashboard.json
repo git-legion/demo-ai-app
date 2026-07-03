@@ -1,16 +1,93 @@
 {
+  "title": "AI Monitoring Dashboard",
+  "uid": "llamaops-ai",
+  "schemaVersion": 38,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
   "panels": [
     {
+      "id": 1,
+      "title": "Application Requests (legacy counter)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
       "targets": [
         {
           "expr": "app_requests_total",
+          "legendFormat": "total requests",
           "refId": "A"
         }
-      ],
-      "title": "Application Requests",
-      "type": "timeseries"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "AI Request Rate (OTel)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(llamaops_ai_requests_total[1m])",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "AI Response Duration p99 (OTel)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(llamaops_ai_response_duration_bucket[5m])) by (le, model))",
+          "legendFormat": "p99 {{model}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "AI Response Duration p50 (OTel)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(llamaops_ai_response_duration_bucket[5m])) by (le, model))",
+          "legendFormat": "p50 {{model}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "AI Request Success vs Error",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (status) (llamaops_ai_requests_total)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Traces — llamaops-ai",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"llamaops-ai\"}",
+          "refId": "A"
+        }
+      ]
     }
-  ],
-  "title": "AI Monitoring Dashboard"
+  ]
 }
-

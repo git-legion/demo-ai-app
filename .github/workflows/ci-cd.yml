@@ -11,6 +11,10 @@ on:
         description: "Deploy Ollama Runtime"
         required: true
         default: "false"
+      deploy_observability:
+        description: "Deploy OTel Collector + Tempo (first-time setup or config change)"
+        required: true
+        default: "false"
 
 #################################################
 # Global Environment Variables
@@ -210,6 +214,8 @@ jobs:
               --restart always \
               -e APP_USERNAME=${{ secrets.APP_USERNAME }} \
               -e APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
+              -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 \
+              -e OTEL_SERVICE_NAME=llamaops-ai \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.AI_IMAGE }}:latest
 
             #################################################
@@ -464,6 +470,270 @@ jobs:
               -p 9090:9090 \
               --restart always \
               ${{ secrets.DOCKER_USERNAME }}/${{ env.PROMETHEUS_IMAGE }}:latest
+
+            docker ps
+
+#################################################
+# Deploy Loki Log Backend
+#################################################
+
+  deploy-loki:
+
+    name: Deploy Loki Log Backend
+
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_observability == 'true'
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Loki Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker stop loki || true
+
+            docker rm loki || true
+
+            #################################################
+            # Copy Loki Config
+            #################################################
+
+            cat > /tmp/loki.yml << 'EOF'
+            auth_enabled: false
+            server:
+              http_listen_port: 3100
+              grpc_listen_port: 9096
+            common:
+              instance_addr: 127.0.0.1
+              path_prefix: /var/loki
+              storage:
+                filesystem:
+                  chunks_directory: /var/loki/chunks
+                  rules_directory: /var/loki/rules
+              replication_factor: 1
+              ring:
+                kvstore:
+                  store: inmemory
+            schema_config:
+              configs:
+                - from: 2024-01-01
+                  store: tsdb
+                  object_store: filesystem
+                  schema: v13
+                  index:
+                    prefix: index_
+                    period: 24h
+            limits_config:
+              allow_structured_metadata: true
+              volume_enabled: true
+            EOF
+
+            docker run -d \
+              --name loki \
+              --network monitoring-network \
+              -p 3100:3100 \
+              --restart always \
+              -v /tmp/loki.yml:/etc/loki.yml \
+              -v loki-data:/var/loki \
+              grafana/loki:latest \
+              -config.file=/etc/loki.yml
+
+            docker ps
+
+#################################################
+# Deploy Tempo Trace Backend
+#################################################
+
+  deploy-tempo:
+
+    name: Deploy Tempo Trace Backend
+
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_observability == 'true'
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Tempo Container
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker stop tempo || true
+
+            docker rm tempo || true
+
+            #################################################
+            # Copy Tempo Config
+            #################################################
+
+            cat > /tmp/tempo.yml << 'EOF'
+            stream_over_http_enabled: true
+            server:
+              http_listen_port: 3200
+            distributor:
+              receivers:
+                otlp:
+                  protocols:
+                    grpc:
+                      endpoint: 0.0.0.0:4317
+                    http:
+                      endpoint: 0.0.0.0:4318
+            ingester:
+              max_block_duration: 5m
+            compactor:
+              compaction:
+                block_retention: 1h
+            storage:
+              trace:
+                backend: local
+                local:
+                  path: /var/tempo/blocks
+                wal:
+                  path: /var/tempo/wal
+            EOF
+
+            docker run -d \
+              --name tempo \
+              --network monitoring-network \
+              -p 3200:3200 \
+              -p 4319:4317 \
+              --restart always \
+              -v /tmp/tempo.yml:/etc/tempo.yml \
+              -v tempo-data:/var/tempo \
+              grafana/tempo:latest \
+              -config.file=/etc/tempo.yml
+
+            docker ps
+
+#################################################
+# Deploy OTel Collector
+#################################################
+
+  deploy-otel-collector:
+
+    name: Deploy OTel Collector
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy-tempo
+      - deploy-loki
+
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_observability == 'true'
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Deploy OTel Collector
+
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+
+            docker network create monitoring-network || true
+
+            docker stop otel-collector || true
+
+            docker rm otel-collector || true
+
+            #################################################
+            # Copy OTel Collector Config
+            #################################################
+
+            cat > /tmp/otel-collector-config.yml << 'EOF'
+            receivers:
+              otlp:
+                protocols:
+                  grpc:
+                    endpoint: 0.0.0.0:4317
+                  http:
+                    endpoint: 0.0.0.0:4318
+            processors:
+              batch:
+                timeout: 5s
+                send_batch_size: 512
+              resource:
+                attributes:
+                  - action: insert
+                    key: service.name
+                    value: llamaops-ai
+            exporters:
+              prometheus:
+                endpoint: "0.0.0.0:8889"
+                namespace: llamaops
+              otlp/tempo:
+                endpoint: tempo:4317
+                tls:
+                  insecure: true
+              loki:
+                endpoint: http://loki:3100/loki/api/v1/push
+                default_labels_enabled:
+                  exporter: false
+                  job: true
+                  instance: false
+                  level: true
+                tls:
+                  insecure: true
+              debug:
+                verbosity: basic
+            service:
+              pipelines:
+                traces:
+                  receivers: [otlp]
+                  processors: [batch]
+                  exporters: [otlp/tempo, debug]
+                metrics:
+                  receivers: [otlp]
+                  processors: [batch]
+                  exporters: [prometheus]
+                logs:
+                  receivers: [otlp]
+                  processors: [batch, resource]
+                  exporters: [loki]
+            EOF
+
+            docker run -d \
+              --name otel-collector \
+              --network monitoring-network \
+              -p 4317:4317 \
+              -p 4318:4318 \
+              -p 8889:8889 \
+              --restart always \
+              -v /tmp/otel-collector-config.yml:/etc/otel-collector-config.yml \
+              otel/opentelemetry-collector-contrib:latest \
+              --config=/etc/otel-collector-config.yml
 
             docker ps
 
